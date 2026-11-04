@@ -26,7 +26,10 @@ export function execute(spec, ctx = {}) {
     // Damage-style roll: main expression may contain several dice
     const r = rollExpr(spec.expr);
     total += r.total;
-    for (const d of r.detail) parts.push(d.rolls ? `${d.expr}(${d.rolls.join(",")})` : d.expr);
+    r.detail.forEach((d, i) => {
+      const e = i > 0 && !d.expr.startsWith("-") ? "+" + d.expr : d.expr;
+      parts.push(d.rolls ? `${e}(${d.rolls.join(",")})` : e);
+    });
   } else if (spec.die) {
     dieUsed = shiftDie(spec.die, (spec.shift || 0) + (ctx.shift || 0));
     const count = spec.count || 1;

@@ -2,6 +2,7 @@
 import OBR from "@owlbear-rodeo/sdk";
 import { NS, SHEET_KEY, ROLL_CHANNEL, POPOVER_ID, POPOVER_CHANNEL, openSheetPopover, logPush, lsGet } from "./store.js";
 import { blankCharacter } from "./rules.js";
+import { blankMonster } from "./monster.js";
 
 // Absolute URLs so the extension works when hosted in a sub-folder (e.g. GitHub Pages).
 const here = (path) => new URL(path, window.location.href).href;
@@ -11,13 +12,29 @@ OBR.onReady(() => {
     id: `${NS}/context-menu`,
     icons: [
       {
+        // The judge can open any sheet
         icon: here("icon.svg"),
         label: "Open Xcrawl sheet",
         filter: {
           max: 1,
+          roles: ["GM"],
           every: [
             { key: "layer", value: "CHARACTER" },
             { key: ["metadata", SHEET_KEY], value: undefined, operator: "!=" },
+          ],
+        },
+      },
+      {
+        // Players can open crawler sheets, but not monster sheets
+        icon: here("icon.svg"),
+        label: "Open Xcrawl sheet",
+        filter: {
+          max: 1,
+          roles: ["PLAYER"],
+          every: [
+            { key: "layer", value: "CHARACTER" },
+            { key: ["metadata", SHEET_KEY], value: undefined, operator: "!=" },
+            { key: ["metadata", SHEET_KEY, "kind"], value: "monster", operator: "!=" },
           ],
         },
       },
@@ -50,6 +67,35 @@ OBR.onReady(() => {
 
   // The sheet asks us to reopen it on the other side of the screen (it can't reopen itself,
   // because closing the popover would end its own script).
+  // Judge only: put a monster / NPC sheet on a token
+  OBR.contextMenu.create({
+    id: `${NS}/context-menu-monster`,
+    icons: [
+      {
+        icon: here("monster.svg"),
+        label: "Add monster sheet",
+        filter: {
+          max: 1,
+          roles: ["GM"],
+          every: [
+            { key: "layer", value: "CHARACTER" },
+            { key: ["metadata", SHEET_KEY], value: undefined },
+          ],
+        },
+      },
+    ],
+    async onClick(context) {
+      const item = context.items[0];
+      if (!item || item.metadata[SHEET_KEY]) return;
+      const m = blankMonster();
+      m.name = item.name || m.name;
+      await OBR.scene.items.updateItems([item.id], (drafts) => {
+        for (const d of drafts) d.metadata[SHEET_KEY] = JSON.parse(JSON.stringify(m));
+      });
+      await openSheetPopover(item.id);
+    },
+  });
+
   OBR.broadcast.onMessage(POPOVER_CHANNEL, async (ev) => {
     const msg = ev.data;
     if (!msg || msg.type !== "reopen" || !msg.itemId) return;

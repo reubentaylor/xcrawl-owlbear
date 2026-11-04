@@ -245,3 +245,15 @@ table.skills td.r { text-align: right; font: 600 15px/1 var(--display); width: 4
   .party { grid-template-columns: 1fr; }
   .grid4 { grid-template-columns: 1fr 1fr; }
 }
+
+/* monsters */
+.vitals.mv { grid-template-columns: 2.4fr repeat(4, 1fr); }
+.statblock { font-size: 12px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 7px 9px; margin: 4px 0 8px; color: var(--muted); }
+.w-dmg.wide { width: 110px; }
+.monster-tools { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; margin: 6px 0; }
+.monster-tools textarea { margin-top: 6px; }
+.party-card.monster { border-left: 3px solid var(--accent); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.m-atk { margin-top: 4px; }
+.m-atk .w-dmg { width: 64px; }
+.m-atk .w-dmg.wide { flex: 1; width: auto; min-width: 60px; }

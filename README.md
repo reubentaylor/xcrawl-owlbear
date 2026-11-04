@@ -26,6 +26,12 @@ The class tables, specialist skill tables, birth augurs, the occupation table, a
   - Jammers can add Mojo after someone else's roll from the log.
   - When the GM starts combat, natural 20s earn Mojo (gnomes roll their Team Mascot die) and natural 1s wipe everyone's Mojo (gnomes keep 1).
   - GM buttons: **Encounter won: +1 Mojo all** and **Wipe Mojo**.
+- **Monster and NPC sheets (judge only):**
+  - Includes all 60 stat blocks from the corebook's Monsters chapter (pp.321–345), from Aangervark to Wolf, plus the sample NPCs.
+  - Select one or more monster tokens and use **Add to selected tokens** in the party panel. Each token gets its own numbered sheet with rolled hit points.
+  - Right-click a token and choose **Add monster sheet**, then fill it in from the corebook list or paste any stat block in the standard `Name: Init …; Atk …; … AL C.` format.
+  - One-click rolls for initiative, attacks with each action die, deed-die attacks with matching damage, damage, crits on the right monster crit table, saves and hit points.
+  - Monster sheets and their rolls are GM-only by default. Players can't open them unless you tick **Let players see this sheet**.
 - **Next roll modifiers.** Set a ±mod and ±dice-chain shift, and choose who sees the roll (everyone, GM only, or only you).
 
 ## Install

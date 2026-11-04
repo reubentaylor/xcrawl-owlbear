@@ -10,6 +10,9 @@ import * as R from "./rolls.js";
 import { execute, applyLuckBurn } from "./rolls.js";
 import { signed, rollDie } from "./dice.js";
 import * as S from "./store.js";
+import * as M from "./monster.js";
+
+const isMonster = (c) => !!c && c.kind === "monster";
 
 /* ============================================================
    State
@@ -67,6 +70,14 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove("show"), 2600);
 }
 function normalize(c) {
+  if (isMonster(c)) {
+    const b = M.blankMonster();
+    const out = { ...b, ...c };
+    out.hp = { ...b.hp, ...(c.hp || {}) };
+    out.attacks = Array.isArray(c.attacks) ? c.attacks : [];
+    if (!out.id) out.id = uid();
+    return out;
+  }
   const b = blankCharacter();
   const out = { ...b, ...c };
   out.abil = { ...b.abil, ...(c.abil || {}) };
@@ -178,7 +189,7 @@ async function doRoll(spec, extra = {}) {
   const ctx = { mod: app.next.mod, shift: app.next.shift };
   app.next = { mod: 0, shift: 0 };
   let mojoNote = null;
-  if (spec.mojo && c && c.mojoIncoming.length) {
+  if (spec.mojo && c && Array.isArray(c.mojoIncoming) && c.mojoIncoming.length) {
     ctx.mojo = c.mojoIncoming.reduce((a, m) => a + (Number(m.n) || 0), 0);
     mojoNote = c.mojoIncoming.map((m) => `${m.n} from ${m.from}`).join(", ");
     c.mojoIncoming = [];
@@ -197,7 +208,7 @@ async function doRoll(spec, extra = {}) {
     parts: res.parts,
     tags: res.tags,
     notes: res.notes,
-    visibility: app.visibility,
+    visibility: isMonster(c) ? c.rollVis || "gm" : app.visibility,
     time: Date.now(),
   };
   app.lastCard = { card, res, spec, extra };
@@ -217,7 +228,7 @@ function pushCard(card) {
 
 async function combatAutomation(res) {
   const c = app.char;
-  if (!c || !app.room.combat || !res.mojoEligible || res.die !== 20) return;
+  if (!c || isMonster(c) || !app.room.combat || !res.mojoEligible || res.die !== 20) return;
   if (res.nat === 20) {
     let gain = 1;
     let label = "+1 Mojo for the natural 20";
@@ -236,7 +247,7 @@ async function combatAutomation(res) {
 }
 
 async function wipeMojo(reason) {
-  const ids = app.roster.filter((r) => r.ref.kind === "token").map((r) => r.ref.id);
+  const ids = app.roster.filter((r) => r.ref.kind === "token" && !isMonster(r.data)).map((r) => r.ref.id);
   const gnomeBonus = (s) => (s.cls === "gnome" && (Number(s.level) || 0) > 0 ? 1 : 0);
   if (app.char) app.char.mojo = gnomeBonus(app.char);
   try {
@@ -274,6 +285,10 @@ async function applyAction(f, silent) {
       c.hp.max = (Number(c.hp.max) || 0) + f.n;
       c.hp.cur = (Number(c.hp.cur) || 0) + f.n;
       toast(`Max HP is now ${c.hp.max}`);
+      break;
+    case "sethp":
+      c.hp = { max: f.n, cur: f.n };
+      toast(`HP set to ${f.n}`);
       break;
     case "spellLost": {
       const s = c.spells.find((x) => x.id === f.spellId);
@@ -366,8 +381,20 @@ function renderRoster() {
   const inObr = S.inOwlbear();
   const sel = app.selectionItems.filter((i) => i.layer === "CHARACTER");
   const selNoSheet = sel.length === 1 && !(sel[0].metadata || {})[S.SHEET_KEY] ? sel[0] : null;
-  const scene = app.roster.filter((r) => r.ref.kind === "token");
-  const local = app.roster.filter((r) => r.ref.kind === "local");
+  const visible = (r) => !isMonster(r.data) || gm || r.data.showPlayers;
+  const scene = app.roster.filter((r) => r.ref.kind === "token" && !isMonster(r.data));
+  const local = app.roster.filter((r) => r.ref.kind === "local" && !isMonster(r.data));
+  const monsters = app.roster.filter((r) => isMonster(r.data) && visible(r));
+  const selChar = sel.filter((i) => !((i.metadata || {})[S.SHEET_KEY]) || isMonster((i.metadata || {})[S.SHEET_KEY]));
+
+  const mcard = (r) => {
+    const m = normalize(r.data);
+    const hpPct = Math.max(0, Math.min(100, (Number(m.hp.cur) / Math.max(1, Number(m.hp.max))) * 100));
+    return `<div class="party-card monster" data-open="${r.ref.kind}:${esc(r.ref.id)}">
+      <div class="pc-name"><b>${esc(m.name)}</b><span>${r.ref.kind === "local" ? "library · " : ""}AC ${esc(m.ac || "—")} · HD ${esc(m.hd)}</span></div>
+      <div class="hpbar"><i style="width:${hpPct}%"></i><span>${esc(m.hp.cur)}/${esc(m.hp.max)} HP</span></div>
+    </div>`;
+  };
 
   const card = (r) => {
     const c = normalize(r.data);
@@ -398,6 +425,20 @@ function renderRoster() {
       ${selNoSheet ? `<section class="panel hint"><span>Selected token: <b>${esc(selNoSheet.name)}</b></span><button class="btn primary" data-act="add-to-token" data-id="${esc(selNoSheet.id)}">Add sheet</button></section>` : ""}
       <h3>${inObr ? "In this scene" : "Characters"}</h3>
       ${inObr ? (scene.length ? `<div class="party">${scene.map(card).join("")}</div>` : `<p class="muted">No tokens have sheets yet. Right-click a character token and choose <b>Add Xcrawl sheet</b>, or attach one from your library.</p>`) : ""}
+      ${gm || monsters.length ? `<h3>Monsters & NPCs${gm ? ` <small class="muted">(hidden from players)</small>` : ""}</h3>
+      ${monsters.length ? `<div class="party">${monsters.map(mcard).join("")}</div>` : ""}
+      ${gm ? `<section class="monster-tools">
+        <div class="row gap"><select id="m-pick" class="grow">${M.COREBOOK_MONSTERS.map((x, i) => opt(i, `${x[0]} (p.${x[1]})`, "")).join("")}</select></div>
+        <div class="row gap wrap">
+          ${inObr ? `<button class="btn primary" data-act="m-add-selected" ${selChar.length ? "" : "disabled"}>${selChar.length ? `Add to ${selChar.length} selected token${selChar.length > 1 ? "s" : ""}` : "Select monster tokens to add"}</button>` : ""}
+          <button class="btn" data-act="m-add-lib">Add to library</button>
+          <button class="btn" data-act="m-blank">Blank monster</button>
+        </div>
+        <details><summary>Paste a stat block</summary>
+          <textarea id="m-paste" rows="4" placeholder="Orc: Init +0; Atk spear +1 melee (1d8); Crit III/d4; AC 13; HD 1d8; MV 20’; Act 1d20; SP infravision; SV Fort +1, Ref +0, Will -1; AL C."></textarea>
+          <div class="row gap">${inObr ? `<button class="btn primary" data-act="m-paste-selected" ${selChar.length ? "" : "disabled"}>Add to selected token${selChar.length > 1 ? "s" : ""}</button>` : ""}<button class="btn" data-act="m-paste-lib">Add to library</button></div>
+        </details>
+      </section>` : ""}` : ""}
       <h3>My library <small class="muted">(this browser only)</small></h3>
       ${local.length ? `<div class="party">${local.map(card).join("")}</div>` : `<p class="muted">Nothing here yet.</p>`}
       <section class="row gap wrap">
@@ -411,6 +452,116 @@ function renderRoster() {
     </div>`;
 }
 
+/* ---------------- Monster sheet ---------------- */
+function renderMonsterBody(m) {
+  const focus = rememberFocus();
+  const gm = app.player.role === "GM";
+  const nameInput = $app.querySelector(".name-input");
+  if (nameInput && document.activeElement !== nameInput) nameInput.value = m.name;
+  const body = document.getElementById("body");
+  if (!gm && !m.showPlayers) {
+    document.getElementById("vitals").innerHTML = "";
+    body.innerHTML = `<p class="muted" style="padding:20px 4px">The judge is keeping this one's stats secret.</p>`;
+    document.getElementById("lastroll").innerHTML = "";
+    return;
+  }
+  const hpPct = Math.max(0, Math.min(100, (Number(m.hp.cur) / Math.max(1, Number(m.hp.max))) * 100));
+  const ad = M.COREBOOK_MONSTERS && m.act ? m.act : "1d20";
+  document.getElementById("vitals").innerHTML = `<div class="vitals mv">
+    <div class="v hp"><label>HP</label>
+      <div class="hpwrap"><button class="mini" data-act="hp" data-n="-1">−</button>
+        <input type="number" class="num big" data-bind="hp.cur" value="${esc(m.hp.cur)}"><span class="slash">/</span><input type="number" class="num" data-bind="hp.max" value="${esc(m.hp.max)}">
+        <button class="mini" data-act="hp" data-n="1">+</button></div>
+      <div class="hpbar thin"><i style="width:${hpPct}%"></i></div></div>
+    <div class="v"><label>AC</label><b class="stat">${esc(m.ac || "—")}</b></div>
+    <div class="v"><label>Init</label><button class="stat roll" data-mroll="init">${esc(m.init)}</button></div>
+    <div class="v"><label>Act</label><b class="stat sm">${esc(ad)}</b></div>
+    <div class="v"><label>MV</label><b class="stat sm">${esc(m.mv)}</b></div>
+  </div>
+  <div class="nextroll">
+    <span>Next roll</span>
+    <button class="mini" data-act="nextmod" data-n="-1">−</button><b>${signed(app.next.mod)}</b><button class="mini" data-act="nextmod" data-n="1">+</button>
+    <button class="mini wide" data-act="nextshift" data-n="-1">−1d</button><b>${app.next.shift ? signed(app.next.shift) + "d" : "d±0"}</b><button class="mini wide" data-act="nextshift" data-n="1">+1d</button>
+    <select data-bind="rollVis" aria-label="Who sees rolls">${opt("gm", "GM only", m.rollVis)}${opt("public", "Everyone sees", m.rollVis)}${opt("self", "Only me", m.rollVis)}</select>
+  </div>`;
+  const dice = actionDiceList(m.act);
+  const scrollTop = body.scrollTop;
+  body.innerHTML = `
+  ${m.block ? `<p class="statblock">${esc(m.block)}</p>` : ""}
+  <h3>Attacks</h3>
+  <div class="weapons">
+    ${m.attacks.map((a, i) => `<div class="weapon">
+      <div class="w-line"><input data-bind="attacks.${i}.name" value="${esc(a.name)}" class="w-name"></div>
+      <div class="w-line m-atk">
+        <input data-bind="attacks.${i}.bonus" value="${esc(a.bonus)}" class="w-dmg" title="Attack bonus (or deed die, e.g. 1d4+3)">
+        <input data-bind="attacks.${i}.dmg" value="${esc(a.dmg)}" class="w-dmg wide" title="Damage">
+        ${dice.length > 1 ? dice.map((d, k) => `<button class="btn ${k ? "" : "primary"} sm" data-mattack="${i}" data-ad="${k}" title="Attack with action die d${d}">d${d}</button>`).join("") : `<button class="btn primary sm" data-mattack="${i}" data-ad="0">Attack</button>`}
+        <button class="btn sm" data-mdmg="${i}">Dmg</button>
+      </div>
+      <details><summary>options</summary><div class="w-opts">
+        <select data-bind="attacks.${i}.type">${opt("melee", "Melee", a.type)}${opt("missile", "Missile", a.type)}</select>
+        <button class="link danger" data-act="m-del-attack" data-i="${i}">remove</button>
+      </div></details>
+    </div>`).join("")}
+  </div>
+  <div class="row gap"><button class="btn" data-act="m-add-attack">Add attack</button><button class="btn" data-mroll="crit">Crit (${esc(m.crit || "—")})</button></div>
+
+  <h3>Saving throws</h3>
+  <div class="saves">
+    ${["fort", "ref", "will"].map((k) => `<button class="save roll" data-mroll="${k}"><span>${{ fort: "Fortitude", ref: "Reflex", will: "Willpower" }[k]}</span><b>${signed(m[k])}</b></button>`).join("")}
+  </div>
+
+  <h3>Statistics</h3>
+  <div class="grid3">
+    ${field("Init", input("init", m.init))}
+    ${field("AC", input("ac", m.ac))}
+    ${field("Action dice", input("act", m.act))}
+    ${field("Hit dice", input("hd", m.hd))}
+    ${field("Crit (table/die)", input("crit", m.crit))}
+    ${field("Crit range from", input("critRange", m.critRange ?? "", "number", 'placeholder="max"'))}
+    ${field("Fort", input("fort", m.fort, "number"))}
+    ${field("Ref", input("ref", m.ref, "number"))}
+    ${field("Will", input("will", m.will, "number"))}
+    ${field("Movement", input("mv", m.mv), "span2")}
+    ${field("Alignment", input("al", m.al))}
+  </div>
+  <div class="row gap wrap"><button class="btn" data-mroll="hp">Roll hit points (${esc(m.hd)})</button>
+    <label class="chk"><input type="checkbox" data-bind="showPlayers" ${m.showPlayers ? "checked" : ""}> Let players see this sheet</label></div>
+  ${field("Special abilities", `<textarea data-bind="sp" rows="3">${esc(m.sp)}</textarea>`)}
+  ${field("Notes", `<textarea data-bind="notes" rows="4">${esc(m.notes)}</textarea>`)}
+  ${m.source ? `<p class="small muted">${esc(m.source)}${m.page ? ` — see the corebook for its special abilities in full.` : ""}</p>` : ""}
+  <details ${m.block ? "" : "open"}><summary>${m.block ? "Replace with a corebook monster or pasted stat block" : "Fill in from a corebook monster or a pasted stat block"}</summary>
+    <div class="row gap"><select id="m-replace" class="grow">${M.COREBOOK_MONSTERS.map((x, i) => opt(i, `${x[0]} (p.${x[1]})`, "")).join("")}</select><button class="btn" data-act="m-load">Load</button></div>
+    <textarea id="m-paste-here" rows="3" placeholder="Paste a stat block"></textarea>
+    <div class="row gap"><button class="btn" data-act="m-load-paste">Load pasted stat block</button></div>
+  </details>
+  ${renderLog(20)}`;
+  body.scrollTop = scrollTop;
+  document.getElementById("lastroll").innerHTML = renderLastRoll();
+  restoreFocus(focus);
+}
+function actionDiceList(act) {
+  const list = [];
+  for (const t of String(act || "1d20").matchAll(/(\d*)d(\d+)/g)) for (let i = 0; i < (Number(t[1]) || 1); i++) list.push(Number(t[2]));
+  return list.length ? list : [20];
+}
+
+/** Put a monster sheet on each token (each with its own rolled hit points). */
+async function addMonstersToTokens(template, items) {
+  const n = items.length;
+  let k = 0;
+  for (const item of items) {
+    k++;
+    const m = { ...JSON.parse(JSON.stringify(template)), id: uid() };
+    m.attacks = m.attacks.map((a) => ({ ...a, id: uid() }));
+    if (n > 1) m.name = `${template.name} ${k}`;
+    const hp = M.rollHP(m);
+    m.hp = { max: hp, cur: hp };
+    await S.saveToToken(item.id, m);
+  }
+  toast(n > 1 ? `${template.name} added to ${n} tokens, each with rolled HP.` : `${template.name} added.`);
+}
+
 /* ---------------- Sheet ---------------- */
 const TABS = [
   ["core", "Core"],
@@ -422,6 +573,13 @@ const TABS = [
 ];
 
 function renderSheet() {
+  if (isMonster(app.char)) {
+    $app.innerHTML = `${header(`<input class="name-input" data-bind="name" value="${esc(app.char.name)}" aria-label="Monster name">`, `<button class="icon-btn" data-act="menu" title="More">⋯</button>`)}
+    <div id="vitals"></div>
+    <div class="scroll" id="body"></div>
+    <div id="lastroll"></div>`;
+    return renderSheetBody();
+  }
   $app.innerHTML = `${header(`<input class="name-input" data-bind="name" value="${esc(app.char.name)}" aria-label="Character name">`, `<button class="icon-btn" data-act="menu" title="More">⋯</button>`)}
     <div id="vitals"></div>
     <nav class="tabs" id="tabs"></nav>
@@ -433,6 +591,7 @@ function renderSheet() {
 function renderSheetBody() {
   const c = app.char;
   if (!c || app.view !== "sheet") return;
+  if (isMonster(c)) return renderMonsterBody(c);
   const focus = rememberFocus();
   const d = derive(c);
   const hasMagic = !!d.caster || c.spells.length || (c.cls === "specialist" && d.skills.some((s) => s.key === "scroll"));
@@ -496,7 +655,7 @@ function renderLastRoll() {
   if (!lc) return "";
   const { card, res } = lc;
   const c = app.char;
-  const canLuck = c && Number(c.abil.lck.cur) > 0 && !["luck", "hp", "info"].includes(card.kind);
+  const canLuck = c && c.abil && Number(c.abil.lck.cur) > 0 && !["luck", "hp", "info"].includes(card.kind);
   const ld = c ? luckDie(c) : null;
   const follow = (res.follow || []).filter((f) => !f.auto);
   return `<div class="lastroll">
@@ -875,7 +1034,7 @@ function attackModal(i) {
 
 function giveMojoModal() {
   const c = app.char;
-  const others = app.roster.filter((r) => !(r.data && r.data.id === c.id) && (r.ref.kind === "token" || !S.inOwlbear()));
+  const others = app.roster.filter((r) => !isMonster(r.data) && !(r.data && r.data.id === c.id) && (r.ref.kind === "token" || !S.inOwlbear()));
   if (!others.length) return toast("No teammates in the scene to give Mojo to.");
   if (!(Number(c.mojo) > 0)) return toast("You have no Mojo to give.");
   modal(`<h3>Give Mojo</h3>
@@ -1139,6 +1298,22 @@ $app.addEventListener("click", async (e) => {
     return doRoll(R.spellCheck(c, i >= 0 ? c.spells[i] : null, { spellburn }));
   }
   if (ds.roll) return handleRoll(ds.roll, ds.arg);
+  if (ds.mattack !== undefined) {
+    const a = c.attacks[Number(ds.mattack)];
+    const dice = actionDiceList(c.act);
+    return a && doRoll(M.monsterAttack(c, a, { die: dice[Number(ds.ad) || 0] }));
+  }
+  if (ds.mdmg !== undefined) {
+    const a = c.attacks[Number(ds.mdmg)];
+    const spec = a && M.monsterDamage(c, a);
+    return spec ? doRoll(spec) : toast("No damage dice to roll for that attack.");
+  }
+  if (ds.mroll) {
+    if (ds.mroll === "init") return doRoll(M.monsterInit(c));
+    if (ds.mroll === "crit") return doRoll(M.monsterCrit(c));
+    if (ds.mroll === "hp") { const sp = M.hpRollSpec(c); return sp ? doRoll(sp) : toast("No hit dice to roll."); }
+    return doRoll(M.monsterSave(c, ds.mroll));
+  }
 
   switch (ds.act) {
     case "back":
@@ -1221,6 +1396,44 @@ $app.addEventListener("click", async (e) => {
     case "combat": app.room = await S.setRoomState({ combat: !app.room.combat }); return render();
     case "encounter": await rosterAll((s) => ({ ...s, mojo: (Number(s.mojo) || 0) + 1 }), "Encounter won: +1 Mojo to every crawler."); return;
     case "wipe": await rosterAll((s) => ({ ...s, mojo: s.cls === "gnome" && Number(s.level) > 0 ? 1 : 0 }), "Mojo wiped."); return;
+    case "m-add-attack":
+      c.attacks.push({ id: uid(), name: "attack", bonus: "+0", type: "melee", dmg: "1d4", raw: "" });
+      break;
+    case "m-del-attack": c.attacks.splice(Number(ds.i), 1); break;
+    case "m-load": case "m-load-paste": {
+      let m;
+      if (ds.act === "m-load") m = M.fromCorebook(Number(document.getElementById("m-replace").value));
+      else {
+        const txt = document.getElementById("m-paste-here").value.trim();
+        if (!txt) return toast("Paste a stat block first.");
+        m = M.parseStatBlock(txt);
+      }
+      const hp = M.rollHP(m);
+      app.char = { ...m, id: c.id, hp: { max: hp, cur: hp }, notes: c.notes || "" };
+      scheduleSave();
+      return renderSheet();
+    }
+    case "m-add-selected": case "m-add-lib": case "m-paste-selected": case "m-paste-lib": case "m-blank": {
+      let tpl;
+      if (ds.act === "m-blank") tpl = M.blankMonster();
+      else if (ds.act.startsWith("m-paste")) {
+        const txt = (document.getElementById("m-paste") || {}).value || "";
+        if (!txt.trim()) return toast("Paste a stat block first.");
+        tpl = M.parseStatBlock(txt.trim());
+      } else tpl = M.fromCorebook(Number(document.getElementById("m-pick").value));
+      if (ds.act.endsWith("selected")) {
+        const items = app.selectionItems.filter((i) => i.layer === "CHARACTER" && (!(i.metadata || {})[S.SHEET_KEY] || isMonster(i.metadata[S.SHEET_KEY])));
+        if (!items.length) return toast("Select one or more monster tokens first (tokens with crawler sheets are skipped).");
+        try { await addMonstersToTokens(tpl, items); } catch { toast("Couldn't update those tokens."); }
+        await refreshRoster();
+        return render();
+      }
+      const hp = M.rollHP(tpl);
+      tpl.hp = { max: hp, cur: hp };
+      S.librarySave(tpl);
+      await refreshRoster();
+      return openSheet({ kind: "local", id: tpl.id });
+    }
     case "add-to-token": {
       const item = app.selectionItems.find((i) => i.id === ds.id);
       const nc = blankCharacter();
@@ -1252,7 +1465,7 @@ $app.addEventListener("click", async (e) => {
 });
 
 async function rosterAll(fn, msg) {
-  const ids = app.roster.filter((r) => r.ref.kind === "token").map((r) => r.ref.id);
+  const ids = app.roster.filter((r) => r.ref.kind === "token" && !isMonster(r.data)).map((r) => r.ref.id);
   try {
     await S.updateTokenSheets(ids, fn);
     const card = { id: uid(), char: "Judge", player: app.player.name, playerId: app.player.id, color: app.player.color, title: msg, total: "", parts: [], tags: [], notes: [], visibility: "public", time: Date.now(), kind: "info" };
