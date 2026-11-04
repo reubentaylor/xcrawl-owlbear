@@ -1,26 +1,10 @@
 // Background script: adds the token context menu and turns other players' rolls into notifications.
 import OBR from "@owlbear-rodeo/sdk";
-import { NS, SHEET_KEY, ROLL_CHANNEL, logPush, lsGet } from "./store.js";
+import { NS, SHEET_KEY, ROLL_CHANNEL, POPOVER_ID, POPOVER_CHANNEL, openSheetPopover, logPush, lsGet } from "./store.js";
 import { blankCharacter } from "./rules.js";
 
-const POPOVER_ID = `${NS}/sheet`;
 // Absolute URLs so the extension works when hosted in a sub-folder (e.g. GitHub Pages).
 const here = (path) => new URL(path, window.location.href).href;
-
-async function openSheetPopover(itemId) {
-  const width = await OBR.viewport.getWidth();
-  await OBR.popover.open({
-    id: POPOVER_ID,
-    url: here(`index.html?item=${encodeURIComponent(itemId)}`),
-    width: Math.min(480, width - 40),
-    height: 780,
-    anchorReference: "POSITION",
-    anchorPosition: { left: width - 16, top: 64 },
-    anchorOrigin: { horizontal: "RIGHT", vertical: "TOP" },
-    transformOrigin: { horizontal: "RIGHT", vertical: "TOP" },
-    disableClickAway: true,
-  });
-}
 
 OBR.onReady(() => {
   OBR.contextMenu.create({
@@ -62,6 +46,15 @@ OBR.onReady(() => {
       }
       await openSheetPopover(item.id);
     },
+  });
+
+  // The sheet asks us to reopen it on the other side of the screen (it can't reopen itself,
+  // because closing the popover would end its own script).
+  OBR.broadcast.onMessage(POPOVER_CHANNEL, async (ev) => {
+    const msg = ev.data;
+    if (!msg || msg.type !== "reopen" || !msg.itemId) return;
+    await OBR.popover.close(POPOVER_ID).catch(() => {});
+    await openSheetPopover(msg.itemId);
   });
 
   OBR.broadcast.onMessage(ROLL_CHANNEL, async (ev) => {

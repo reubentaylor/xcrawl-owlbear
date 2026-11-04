@@ -12,6 +12,41 @@ export const LOG_KEY = "xcc-log-v1";
 
 export const inOwlbear = () => OBR.isAvailable;
 
+/* ---------- sheet window (popover) placement ---------- */
+export const POPOVER_ID = `${NS}/sheet`;
+export const POPOVER_CHANNEL = `${NS}/popover`;
+export const SIZES = { S: [380, 560], M: [480, 780], L: [580, 980] };
+export const SIZE_ORDER = ["S", "M", "L"];
+export function popPrefs() {
+  return { side: "right", size: "M", actionSize: "M", ...lsGet("xcc-pop", {}) };
+}
+export function setPopPrefs(patch) {
+  lsSet("xcc-pop", { ...popPrefs(), ...patch });
+}
+export async function sheetSize(size) {
+  const [w, h] = SIZES[size] || SIZES.M;
+  const [vw, vh] = await Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]);
+  return { width: Math.min(w, vw - 32), height: Math.min(h, vh - 80) };
+}
+export async function openSheetPopover(itemId) {
+  const prefs = popPrefs();
+  const vw = await OBR.viewport.getWidth();
+  const { width, height } = await sheetSize(prefs.size);
+  const right = prefs.side !== "left";
+  const side = right ? "RIGHT" : "LEFT";
+  await OBR.popover.open({
+    id: POPOVER_ID,
+    url: new URL(`index.html?item=${encodeURIComponent(itemId)}`, window.location.href).href,
+    width,
+    height,
+    anchorReference: "POSITION",
+    anchorPosition: { left: right ? vw - 16 : 16, top: 64 },
+    anchorOrigin: { horizontal: side, vertical: "TOP" },
+    transformOrigin: { horizontal: side, vertical: "TOP" },
+    disableClickAway: true,
+  });
+}
+
 /* ---------- safe localStorage ---------- */
 export function lsGet(key, fallback) {
   try {

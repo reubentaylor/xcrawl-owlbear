@@ -340,8 +340,20 @@ function header(title, extra = "") {
     ${app.view === "sheet" && !app.popoverItem ? `<button class="icon-btn" data-act="back" title="All characters">‹</button>` : ""}
     <div class="title">${title}</div>
     ${extra}
-    ${app.popoverItem ? `<button class="icon-btn" data-act="close" title="Close">✕</button>` : ""}
+    ${windowControls()}
   </header>`;
+}
+
+function windowControls() {
+  if (!S.inOwlbear()) return "";
+  const prefs = S.popPrefs();
+  const size = app.popoverItem ? prefs.size : prefs.actionSize;
+  const sizeBtn = `<button class="icon-btn txt" data-act="win-size" title="Change size (small / medium / large)">${size}</button>`;
+  if (!app.popoverItem) return sizeBtn;
+  return `${sizeBtn}
+    <button class="icon-btn" data-act="win-side" title="Move to the ${prefs.side === "left" ? "right" : "left"} side of the screen">${prefs.side === "left" ? "⇥" : "⇤"}</button>
+    <button class="icon-btn" data-act="win-min" title="${app.minimised ? "Restore" : "Minimise"}">${app.minimised ? "▢" : "▁"}</button>
+    <button class="icon-btn" data-act="close" title="Close">✕</button>`;
 }
 
 /* ---------------- Roster / party view ---------------- */
@@ -1134,7 +1146,35 @@ $app.addEventListener("click", async (e) => {
       return render();
     case "close":
       await saveNow();
-      return S.OBR.popover.close(`${S.NS}/sheet`);
+      return S.OBR.popover.close(S.POPOVER_ID);
+    case "win-size": {
+      const prefs = S.popPrefs();
+      const key = app.popoverItem ? "size" : "actionSize";
+      const next = S.SIZE_ORDER[(S.SIZE_ORDER.indexOf(prefs[key]) + 1) % S.SIZE_ORDER.length];
+      S.setPopPrefs({ [key]: next });
+      const { width, height } = await S.sheetSize(next);
+      if (app.popoverItem) {
+        app.minimised = false;
+        await S.OBR.popover.setWidth(S.POPOVER_ID, width);
+        await S.OBR.popover.setHeight(S.POPOVER_ID, height);
+      } else {
+        await S.OBR.action.setWidth(width);
+        await S.OBR.action.setHeight(height);
+      }
+      return render();
+    }
+    case "win-side": {
+      await saveNow();
+      const prefs = S.popPrefs();
+      S.setPopPrefs({ side: prefs.side === "left" ? "right" : "left" });
+      return S.OBR.broadcast.sendMessage(S.POPOVER_CHANNEL, { type: "reopen", itemId: app.popoverItem }, { destination: "LOCAL" });
+    }
+    case "win-min": {
+      app.minimised = !app.minimised;
+      const { height } = await S.sheetSize(S.popPrefs().size);
+      await S.OBR.popover.setHeight(S.POPOVER_ID, app.minimised ? 46 : height);
+      return render();
+    }
     case "menu": return sheetMenu();
     case "hp":
       c.hp.cur = (Number(c.hp.cur) || 0) + Number(ds.n);

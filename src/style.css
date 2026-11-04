@@ -78,6 +78,8 @@ header.top .title { flex: 1; font: 600 17px/1.1 var(--display); letter-spacing: 
 .name-input:hover, .name-input:focus { border-color: rgba(255,255,255,.4); background: rgba(0,0,0,.18); outline: none; }
 .icon-btn { background: rgba(0,0,0,.2); color: inherit; border: 0; border-radius: 6px; width: 28px; height: 28px; font-size: 16px; cursor: pointer; flex: none; }
 .icon-btn:hover { background: rgba(0,0,0,.35); }
+.icon-btn.txt { font: 600 13px/1 var(--display); letter-spacing: .04em; }
+header.top .icon-btn { width: 26px; height: 26px; font-size: 14px; }
 .icon-btn.sm { width: 24px; height: 24px; font-size: 12px; background: var(--panel2); color: var(--muted); margin-left: auto; }
 
 /* controls */
