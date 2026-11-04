@@ -1,15 +1,15 @@
 {
   "name": "Xcrawl Classics Sheets",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "manifest_version": 1,
   "author": "Reuben Taylor",
   "description": "Xcrawl Classics character sheets on your tokens: every class and specialist sub-class, rolls, Mojo and Fame.",
-  "icon": "icon.svg",
-  "background_url": "background.html",
+  "icon": "https://reubentaylor.github.io/xcrawl-owlbear/icon.svg",
+  "background_url": "https://reubentaylor.github.io/xcrawl-owlbear/background.html",
   "action": {
     "title": "Xcrawl Classics",
-    "icon": "icon.svg",
-    "popover": "index.html",
+    "icon": "https://reubentaylor.github.io/xcrawl-owlbear/icon.svg",
+    "popover": "https://reubentaylor.github.io/xcrawl-owlbear/index.html",
     "width": 480,
     "height": 820
   }
