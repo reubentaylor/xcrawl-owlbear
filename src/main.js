@@ -1557,7 +1557,7 @@ function importPicker(list) {
     const sp = o.specialty ? ` (${o.specialty})` : "";
     const name = o[PS.EXTRA_KEY] && o[PS.EXTRA_KEY].name ? `${o[PS.EXTRA_KEY].name} — ` : "";
     return `<label class="pick"><input type="checkbox" data-i="${i}">
-      <span><b>${esc(name)}${esc(o.class || "0-level")}${esc(sp)} ${esc(o.level)}</b> · ${esc(o.occupation)}<br>
+      <span><b>${esc(name)}${esc(o.class || "0-level")}${esc(sp)}${o.level ? ` ${esc(o.level)}` : ""}</b> · ${esc(o.occupation || o.occTitle)}<br>
       <small class="muted">Str ${esc(o.strengthScore)} Agi ${esc(o.agilityScore)} Sta ${esc(o.staminaScore)} Per ${esc(o.personalityScore)} Int ${esc(o.intelligenceScore)} Luck ${esc(o.luckScore)} · HP ${esc(o.hitPoints)} · AC ${esc(o.armorClass)}</small></span></label>`;
   };
   modal(`<h3>Import characters</h3>
