@@ -48,6 +48,7 @@ export function blankCharacter() {
     languages: "English",
     gp: 0, sp: 0, cp: 0, wealth: 0,
     sponsors: "",
+    prizes: "",
     notes: "",
     owner: "",
   };
@@ -132,7 +133,7 @@ function packText(p) {
 }
 const FIRST = ["Dex", "Roxy", "Tank", "Jinx", "Moxie", "Brick", "Vee", "Ace", "Kit", "Duke", "Sable", "Rocco", "Neon", "Zara", "Flash", "Bodie", "Lux", "Mags", "Pip", "Gunner"];
 const LAST = ["Steelgrave", "McPummel", "Thunderhide", "Vasquez", "Blackwood", "Quickfinger", "O'Malley", "Ironjaw", "Starling", "Crowe", "Haversham", "Bonecrusher", "Del Rio", "Kowalski", "Fairweather", "Nakamura"];
-function randomName() {
+export function randomName() {
   return `${FIRST[rollDie(FIRST.length) - 1]} ${LAST[rollDie(LAST.length) - 1]}`;
 }
 

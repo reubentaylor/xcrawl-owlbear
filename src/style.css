@@ -257,3 +257,7 @@ table.skills td.r { text-align: right; font: 600 15px/1 var(--display); width: 4
 .m-atk { margin-top: 4px; }
 .m-atk .w-dmg { width: 64px; }
 .m-atk .w-dmg.wide { flex: 1; width: auto; min-width: 60px; }
+.picklist { max-height: 50vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; }
+.pick { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12px; }
+.pick:hover { background: var(--panel2); }
+.pick input { margin-top: 3px; }

@@ -11,6 +11,7 @@ import { execute, applyLuckBurn } from "./rolls.js";
 import { signed, rollDie } from "./dice.js";
 import * as S from "./store.js";
 import * as M from "./monster.js";
+import * as PS from "./purple.js";
 
 const isMonster = (c) => !!c && c.kind === "monster";
 
@@ -445,7 +446,8 @@ function renderRoster() {
         <button class="btn primary" data-act="new-zero">Roll a 0-level crawler</button>
         <button class="btn" data-act="new-funnel">Roll 4 for the funnel</button>
         <button class="btn" data-act="new-blank">Blank sheet</button>
-        <label class="btn file">Import JSON<input type="file" accept=".json,application/json" data-act="import" hidden></label>
+        <label class="btn file" title="Purple Sorcerer character files or sheets saved from here">Import JSON<input type="file" accept=".json,application/json" data-act="import" hidden></label>
+        ${scene.length + local.length ? `<button class="btn" data-act="export-all">Export all (${scene.length + local.length})</button>` : ""}
       </section>
       ${renderLog(12)}
       <p class="foot muted">Rules from the Xcrawl Classics RPG corebook. ${inObr ? `<label class="inline"><input type="checkbox" data-pref="notify" ${S.lsGet("xcc-notify", true) ? "checked" : ""}> Pop-up notifications for others' rolls</label>` : "Running outside Owlbear: sheets save to this browser."}</p>
@@ -976,6 +978,7 @@ function tabGear(c) {
   </div>
   ${field("Languages", input("languages", c.languages))}
   ${field("Sponsors & endorsements", `<textarea data-bind="sponsors" rows="2">${esc(c.sponsors)}</textarea>`)}
+  ${field("Prizes", `<textarea data-bind="prizes" rows="2">${esc(c.prizes || "")}</textarea>`)}
   ${field("Notes", `<textarea data-bind="notes" rows="6">${esc(c.notes)}</textarea>`)}
   `;
 }
@@ -1112,7 +1115,7 @@ function sheetMenu() {
   const sel = app.selectionItems.filter((i) => i.layer === "CHARACTER" && !(i.metadata || {})[S.SHEET_KEY]);
   modal(`<h3>${esc(c.name)}</h3>
     <div class="menu">
-      <button class="btn" data-m="export">Export JSON</button>
+      <button class="btn" data-m="export">${isMonster(c) ? "Export JSON" : "Export (Purple Sorcerer JSON)"}</button>
       ${isToken ? `<button class="btn" data-m="tolib">Copy to my library</button>` : ""}
       ${!isToken && S.inOwlbear() ? (sel.length === 1 ? `<button class="btn primary" data-m="attach">Attach to selected token (${esc(sel[0].name)})</button>` : `<p class="small muted">Select one character token without a sheet to attach this sheet to it.</p>`) : ""}
       <button class="btn" data-m="dup">Duplicate</button>
@@ -1125,12 +1128,9 @@ function sheetMenu() {
       const act = b.dataset.m;
       await saveNow();
       if (act === "export") {
-        const blob = new Blob([JSON.stringify(c, null, 2)], { type: "application/json" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `${(c.name || "crawler").replace(/[^\w-]+/g, "_")}.xcc.json`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        close();
+        if (isMonster(c)) return download(`${safeName(c.name)}.monster.json`, JSON.stringify(c, null, 2));
+        return exportModal([c], `${safeName(c.name)}.json`);
       } else if (act === "tolib") {
         S.librarySave({ ...c, id: uid() });
         toast("Copied to your library.");
@@ -1396,6 +1396,10 @@ $app.addEventListener("click", async (e) => {
     case "combat": app.room = await S.setRoomState({ combat: !app.room.combat }); return render();
     case "encounter": await rosterAll((s) => ({ ...s, mojo: (Number(s.mojo) || 0) + 1 }), "Encounter won: +1 Mojo to every crawler."); return;
     case "wipe": await rosterAll((s) => ({ ...s, mojo: s.cls === "gnome" && Number(s.level) > 0 ? 1 : 0 }), "Mojo wiped."); return;
+    case "export-all": {
+      const chars = app.roster.filter((r) => !isMonster(r.data)).map((r) => normalize(r.data));
+      return exportModal(chars, "characters.json");
+    }
     case "m-add-attack":
       c.attacks.push({ id: uid(), name: "attack", bonus: "+0", type: "melee", dmg: "1d4", raw: "" });
       break;
@@ -1516,17 +1520,94 @@ function untrainedModal() {
 
 async function importFile(file) {
   if (!file) return;
+  let data;
   try {
-    const data = JSON.parse(await file.text());
-    if (!data || typeof data !== "object" || !data.abil) throw new Error("not a sheet");
-    const c = normalize(data);
-    c.id = uid();
-    S.librarySave(c);
-    await refreshRoster();
-    openSheet({ kind: "local", id: c.id });
+    data = JSON.parse(await file.text());
   } catch {
-    toast("That file isn't an Xcrawl sheet.");
+    return toast("That file isn't valid JSON.");
   }
+  // Purple Sorcerer generator format: { characters: [ ... ] }
+  if (PS.isPurpleSorcerer(data)) {
+    const list = PS.characterList(data);
+    if (list.length === 1) return importChars([PS.fromPurpleSorcerer(list[0])], true);
+    return importPicker(list);
+  }
+  // A single sheet saved by an older version of this extension
+  if (data && typeof data === "object" && (data.abil || data.kind === "monster")) return importChars([data], true);
+  toast("That file isn't an Xcrawl sheet or a Purple Sorcerer character file.");
+}
+
+async function importChars(chars, openIfOne) {
+  let last;
+  for (const raw of chars) {
+    const c = normalize(raw);
+    c.id = uid();
+    c.owner = app.player.id;
+    S.librarySave(c);
+    last = c;
+  }
+  await refreshRoster();
+  if (openIfOne && chars.length === 1) return openSheet({ kind: "local", id: last.id });
+  toast(`${chars.length} character${chars.length === 1 ? "" : "s"} added to your library.`);
+  render();
+}
+
+function importPicker(list) {
+  const row = (o, i) => {
+    const sp = o.specialty ? ` (${o.specialty})` : "";
+    const name = o[PS.EXTRA_KEY] && o[PS.EXTRA_KEY].name ? `${o[PS.EXTRA_KEY].name} — ` : "";
+    return `<label class="pick"><input type="checkbox" data-i="${i}">
+      <span><b>${esc(name)}${esc(o.class || "0-level")}${esc(sp)} ${esc(o.level)}</b> · ${esc(o.occupation)}<br>
+      <small class="muted">Str ${esc(o.strengthScore)} Agi ${esc(o.agilityScore)} Sta ${esc(o.staminaScore)} Per ${esc(o.personalityScore)} Int ${esc(o.intelligenceScore)} Luck ${esc(o.luckScore)} · HP ${esc(o.hitPoints)} · AC ${esc(o.armorClass)}</small></span></label>`;
+  };
+  modal(`<h3>Import characters</h3>
+    <p class="small muted">${list.length} characters in this file. Tick the ones you want in your library.</p>
+    <div class="row gap"><input id="pick-filter" class="grow" placeholder="Filter: class, occupation…"><button class="btn sm" data-pick-all>Tick shown</button></div>
+    <div class="picklist">${list.map(row).join("")}</div>
+    <div class="row gap end"><span class="small muted" id="pick-count">0 ticked</span><button class="btn" data-close>Cancel</button><button class="btn primary" id="pick-go">Import</button></div>`, (m, close) => {
+    const boxes = () => [...m.querySelectorAll(".pick input")];
+    const count = () => (m.querySelector("#pick-count").textContent = `${boxes().filter((b) => b.checked).length} ticked`);
+    m.addEventListener("change", count);
+    m.querySelector("#pick-filter").addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase();
+      for (const lab of m.querySelectorAll(".pick")) lab.style.display = lab.textContent.toLowerCase().includes(q) ? "" : "none";
+    });
+    m.querySelector("[data-pick-all]").addEventListener("click", () => {
+      for (const lab of m.querySelectorAll(".pick")) if (lab.style.display !== "none") lab.querySelector("input").checked = true;
+      count();
+    });
+    m.querySelector("#pick-go").addEventListener("click", () => {
+      const chosen = boxes().filter((b) => b.checked).map((b) => list[Number(b.dataset.i)]);
+      if (!chosen.length) return toast("Tick at least one character.");
+      close();
+      importChars(chosen.map((o) => PS.fromPurpleSorcerer(o)), true);
+    });
+  });
+}
+
+function download(filename, text) {
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const safeName = (n) => (n || "crawler").replace(/[^\w-]+/g, "_");
+
+function exportModal(chars, filename) {
+  modal(`<h3>Export ${chars.length === 1 ? esc(chars[0].name) : `${chars.length} characters`}</h3>
+    <p class="small">Saves in the Purple Sorcerer generator's JSON format, which this extension and other tools that read that format can load.</p>
+    <label class="chk"><input type="checkbox" id="x-strict"> Generator fields only</label>
+    <p class="small muted">Leave this unticked to also save what the generator format has no room for — name, current HP, Mojo, spells, weapon details and notes — so the sheet comes back exactly as it was when you import it here.</p>
+    <div class="row gap end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="x-go">Download</button></div>`, (m, close) => {
+    m.querySelector("#x-go").addEventListener("click", () => {
+      download(filename, PS.exportFile(chars, { extras: !m.querySelector("#x-strict").checked }));
+      close();
+    });
+  });
 }
 
 /* ============================================================
