@@ -177,7 +177,9 @@ export async function playerInfo() {
 /* ---------- rolls broadcast ---------- */
 export async function broadcastRoll(card) {
   if (!inOwlbear()) return;
-  await OBR.broadcast.sendMessage(ROLL_CHANNEL, card, { destination: "REMOTE" });
+  // "ALL" so the roll also reaches this player's other windows (sheet popover, party panel,
+  // background); private rolls go only to this player's own windows.
+  await OBR.broadcast.sendMessage(ROLL_CHANNEL, card, { destination: card.visibility === "self" ? "LOCAL" : "ALL" });
 }
 export function onRemoteRoll(cb) {
   if (!inOwlbear()) return () => {};

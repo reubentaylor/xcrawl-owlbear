@@ -66,7 +66,8 @@ OBR.onReady(() => {
       if (role !== "GM") return;
     }
     logPush(card);
-    if (lsGet("xcc-notify", true)) {
+    const mine = card.playerId && card.playerId === OBR.player.id;
+    if (!mine && lsGet("xcc-notify", true)) {
       const tags = card.tags && card.tags.length ? ` [${card.tags.join(", ")}]` : "";
       const who = String(card.char || card.player || "Someone");
       OBR.notification.show(`${who}: ${card.title} = ${card.total}${tags}`.slice(0, 180), card.tags && card.tags.some((t) => /CRIT/.test(t)) ? "SUCCESS" : "DEFAULT").catch(() => {});

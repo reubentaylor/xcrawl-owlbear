@@ -167,6 +167,7 @@ function rollMeta() {
     char: app.char ? app.char.name : "",
     charId: app.char ? app.char.id : "",
     player: app.player.name,
+    playerId: app.player.id,
     color: app.player.color,
   };
 }
@@ -211,7 +212,7 @@ async function doRoll(spec, extra = {}) {
 
 function pushCard(card) {
   app.log = S.logPush(card);
-  if (card.visibility !== "self") S.broadcastRoll(card).catch(() => {});
+  S.broadcastRoll(card).catch(() => {});
 }
 
 async function combatAutomation(res) {
@@ -312,10 +313,13 @@ async function jammerAmend(cardId, n) {
   scheduleSave();
   const msg = { type: "amend", cardId, n, from: c.name, id: uid() };
   applyAmend(msg);
-  S.OBR.isAvailable && S.OBR.broadcast.sendMessage(S.ROLL_CHANNEL, msg, { destination: "REMOTE" }).catch(() => {});
+  S.OBR.isAvailable && S.OBR.broadcast.sendMessage(S.ROLL_CHANNEL, msg, { destination: "ALL" }).catch(() => {});
   renderSheetBody();
 }
+const appliedAmends = new Set();
 function applyAmend(msg) {
+  if (appliedAmends.has(msg.id)) return;
+  appliedAmends.add(msg.id);
   const card = app.log.find((x) => x.id === msg.cardId);
   if (!card) return;
   card.total += msg.n;
@@ -1251,7 +1255,7 @@ async function rosterAll(fn, msg) {
   const ids = app.roster.filter((r) => r.ref.kind === "token").map((r) => r.ref.id);
   try {
     await S.updateTokenSheets(ids, fn);
-    const card = { id: uid(), char: "Judge", player: app.player.name, color: app.player.color, title: msg, total: "", parts: [], tags: [], notes: [], visibility: "public", time: Date.now(), kind: "info" };
+    const card = { id: uid(), char: "Judge", player: app.player.name, playerId: app.player.id, color: app.player.color, title: msg, total: "", parts: [], tags: [], notes: [], visibility: "public", time: Date.now(), kind: "info" };
     pushCard(card);
     toast(msg);
   } catch {
